@@ -15,6 +15,9 @@ export const MAX_INPUT_LENGTH = 500;
 
 export const TOAST_DURATION = 3000;
 
+// 同时展示的提醒上限，超出后按先入先出次序逐条收敛
+export const MAX_TOASTS = 3;
+
 // 模拟字幕数据
 export const MOCK_SUBTITLES = [
   {

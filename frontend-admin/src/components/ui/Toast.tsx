@@ -29,7 +29,7 @@ const ToastItem: React.FC<ToastItemProps> = ({ toast }) => {
     <div
       className={`
         flex items-center gap-3 px-4 py-3 rounded-lg border backdrop-blur-md
-        shadow-lg animate-fade-in ${colorMap[toast.type]}
+        shadow-lg animate-fade-in pointer-events-auto ${colorMap[toast.type]}
       `}
     >
       <Icon className="w-5 h-5 flex-shrink-0" />
@@ -50,7 +50,9 @@ export const ToastContainer: React.FC = () => {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm">
+    // 定位在顶栏下方，避免遮挡右上角"会话记录"入口；
+    // 容器自身不拦截点击，仅提醒条本身可交互
+    <div className="fixed top-24 right-4 md:right-6 z-50 flex flex-col items-end gap-2 max-w-sm pointer-events-none">
       {toasts.map(toast => (
         <ToastItem key={toast.id} toast={toast} />
       ))}

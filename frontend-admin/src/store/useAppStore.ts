@@ -1,9 +1,28 @@
 import { create } from 'zustand';
 import type { AppState, ToastType, AudioSettings, SessionRecord } from '@/types';
 import { generateId } from '@/utils/helpers';
-import { DEFAULT_AUDIO_SETTINGS, TOAST_DURATION } from '@/utils/constants';
+import { DEFAULT_AUDIO_SETTINGS, TOAST_DURATION, MAX_TOASTS } from '@/utils/constants';
 
 const STORAGE_KEY = 'subtitle-translator-session-records';
+
+// 提醒的自动移除定时器表，便于合并时刷新、移除时清理，避免定时器泄漏或失效
+const toastTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+const clearToastTimer = (id: string) => {
+  const timer = toastTimers.get(id);
+  if (timer !== undefined) {
+    clearTimeout(timer);
+    toastTimers.delete(id);
+  }
+};
+
+const scheduleToastRemoval = (id: string) => {
+  clearToastTimer(id);
+  const timer = setTimeout(() => {
+    useAppStore.getState().removeToast(id);
+  }, TOAST_DURATION);
+  toastTimers.set(id, timer);
+};
 
 const loadRecordsFromStorage = (): SessionRecord[] => {
   try {
@@ -54,11 +73,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   
   // Actions
   setSourceLang: (lang: string) => {
+    // 没有真正变化时不更新状态、不给出提醒
+    if (lang === get().sourceLang) return;
     set({ sourceLang: lang });
     get().addToast('info', `源语言已切换`);
   },
-  
+
   setTargetLang: (lang: string) => {
+    // 没有真正变化时不更新状态、不给出提醒
+    if (lang === get().targetLang) return;
     set({ targetLang: lang });
     get().addToast('info', `目标语言已切换`);
   },
@@ -154,18 +177,34 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   
   addToast: (type: ToastType, message: string) => {
+    const { toasts } = get();
+
+    // 相同内容的提醒合并为一条：仅刷新其自动移除倒计时，不再重复堆叠
+    const existing = toasts.find(t => t.type === type && t.message === message);
+    if (existing) {
+      scheduleToastRemoval(existing.id);
+      return;
+    }
+
     const id = generateId();
-    set(state => ({
-      toasts: [...state.toasts, { id, type, message, duration: TOAST_DURATION }],
-    }));
-    
+
+    // 超出上限时按先入先出次序逐条收敛，优先撤下最早的提醒
+    const evicted = toasts.slice(0, Math.max(0, toasts.length - (MAX_TOASTS - 1)));
+    evicted.forEach(t => clearToastTimer(t.id));
+
+    set({
+      toasts: [
+        ...toasts.slice(evicted.length),
+        { id, type, message, duration: TOAST_DURATION },
+      ],
+    });
+
     // 自动移除
-    setTimeout(() => {
-      get().removeToast(id);
-    }, TOAST_DURATION);
+    scheduleToastRemoval(id);
   },
-  
+
   removeToast: (id: string) => {
+    clearToastTimer(id);
     set(state => ({
       toasts: state.toasts.filter(t => t.id !== id),
     }));
