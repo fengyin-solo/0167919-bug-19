@@ -14,6 +14,10 @@ export const DEFAULT_AUDIO_SETTINGS = {
 export const MAX_INPUT_LENGTH = 500;
 
 export const TOAST_DURATION = 3000;
+// 同屏最多保留的提醒数量，超出后最旧的一条最先撤走
+export const MAX_TOASTS = 3;
+// 提醒退场动画时长，需与 index.css 中的 slideOutRight 时长保持一致
+export const TOAST_EXIT_DURATION = 300;
 
 // 模拟字幕数据
 export const MOCK_SUBTITLES = [

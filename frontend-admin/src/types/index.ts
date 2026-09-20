@@ -48,6 +48,10 @@ export interface Toast {
   type: ToastType;
   message: string;
   duration?: number;
+  /** 相同内容合并时累计出现的次数 */
+  count?: number;
+  /** 是否正在播放退场动画（播放后再从列表移除） */
+  leaving?: boolean;
 }
 
 // 会话记录类型
@@ -102,6 +106,7 @@ export interface AppState {
   setInputText: (text: string) => void;
   translate: () => Promise<void>;
   addToast: (type: ToastType, message: string) => void;
+  dismissToast: (id: string) => void;
   removeToast: (id: string) => void;
   addSessionRecord: (record: Omit<SessionRecord, 'id' | 'timestamp'>) => void;
   deleteSessionRecord: (id: string) => void;

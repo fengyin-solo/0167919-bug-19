@@ -1,9 +1,20 @@
 import { create } from 'zustand';
-import type { AppState, ToastType, AudioSettings, SessionRecord } from '@/types';
+import type { AppState, ToastType, AudioSettings, SessionRecord, Toast } from '@/types';
 import { generateId } from '@/utils/helpers';
-import { DEFAULT_AUDIO_SETTINGS, TOAST_DURATION } from '@/utils/constants';
+import { DEFAULT_AUDIO_SETTINGS, TOAST_DURATION, TOAST_EXIT_DURATION, MAX_TOASTS, LANGUAGES } from '@/utils/constants';
 
 const STORAGE_KEY = 'subtitle-translator-session-records';
+
+// Toast 定时器表（模块级，避免随组件重渲染重复创建）
+const toastTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+
+const clearToastTimer = (id: string) => {
+  const timer = toastTimers[id];
+  if (timer) {
+    clearTimeout(timer);
+    delete toastTimers[id];
+  }
+};
 
 const loadRecordsFromStorage = (): SessionRecord[] => {
   try {
@@ -54,13 +65,21 @@ export const useAppStore = create<AppState>((set, get) => ({
   
   // Actions
   setSourceLang: (lang: string) => {
+    const { sourceLang } = get();
+    // 值没有真正改变时不更新状态、不弹提醒
+    if (lang === sourceLang) return;
+    const langName = LANGUAGES.find(l => l.code === lang)?.nativeName ?? lang;
     set({ sourceLang: lang });
-    get().addToast('info', `源语言已切换`);
+    get().addToast('info', `识别语言已切换为 ${langName}`);
   },
-  
+
   setTargetLang: (lang: string) => {
+    const { targetLang } = get();
+    // 值没有真正改变时不更新状态、不弹提醒
+    if (lang === targetLang) return;
+    const langName = LANGUAGES.find(l => l.code === lang)?.nativeName ?? lang;
     set({ targetLang: lang });
-    get().addToast('info', `目标语言已切换`);
+    get().addToast('info', `翻译语言已切换为 ${langName}`);
   },
   
   toggleMic: () => {
@@ -154,18 +173,61 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   
   addToast: (type: ToastType, message: string) => {
+    const { toasts } = get();
+    const duration = TOAST_DURATION;
+
+    // 相同内容的提醒只保留一条，累加次数，并重置存活计时
+    const existing = toasts.find(t => !t.leaving && t.type === type && t.message === message);
+    if (existing) {
+      clearToastTimer(existing.id);
+      set(state => ({
+        toasts: state.toasts.map(t =>
+          t.id === existing.id ? { ...t, count: (t.count ?? 1) + 1 } : t
+        ),
+      }));
+      toastTimers[existing.id] = setTimeout(() => {
+        get().dismissToast(existing.id);
+      }, duration);
+      return;
+    }
+
+    // 新提醒入队，同屏超过上限时先直接挤掉最旧的一条（先进先出）
+    const activeToasts = toasts.filter(t => !t.leaving);
+    let nextToasts: Toast[];
+    if (activeToasts.length >= MAX_TOASTS) {
+      const oldestId = activeToasts[0].id;
+      clearToastTimer(oldestId);
+      nextToasts = toasts.filter(t => t.id !== oldestId);
+    } else {
+      nextToasts = toasts;
+    }
+
     const id = generateId();
-    set(state => ({
-      toasts: [...state.toasts, { id, type, message, duration: TOAST_DURATION }],
-    }));
-    
-    // 自动移除
+    set({
+      toasts: [...nextToasts, { id, type, message, duration, count: 1 }],
+    });
+
+    toastTimers[id] = setTimeout(() => {
+      get().dismissToast(id);
+    }, duration);
+  },
+
+  // 标记为退场中，播放收敛动画后再真正移除
+  dismissToast: (id: string) => {
+    clearToastTimer(id);
+    set(state => {
+      if (!state.toasts.some(t => t.id === id)) return {};
+      return {
+        toasts: state.toasts.map(t => (t.id === id ? { ...t, leaving: true } : t)),
+      };
+    });
     setTimeout(() => {
       get().removeToast(id);
-    }, TOAST_DURATION);
+    }, TOAST_EXIT_DURATION);
   },
-  
+
   removeToast: (id: string) => {
+    clearToastTimer(id);
     set(state => ({
       toasts: state.toasts.filter(t => t.id !== id),
     }));
